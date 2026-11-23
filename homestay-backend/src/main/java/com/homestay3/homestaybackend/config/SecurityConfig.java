@@ -1,0 +1,217 @@
+package com.homestay3.homestaybackend.config;
+
+import com.homestay3.homestaybackend.security.JwtAuthenticationFilter;
+import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+import org.springframework.http.HttpMethod;
+
+import java.util.Arrays;
+import java.util.List;
+
+@Configuration
+@EnableWebSecurity
+@EnableMethodSecurity
+@RequiredArgsConstructor
+public class SecurityConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(SecurityConfig.class);
+    private final JwtAuthenticationFilter jwtAuthFilter;
+    private final UserDetailsService userDetailsService;
+
+    /**
+     * 允许的跨域来源，逗号分隔；支持通配符（如 https://*.example.com）。
+     * 生产环境通过 APP_CORS_ALLOWED_ORIGINS 注入，前端与管理端走同源反代时无需跨域。
+     */
+    @Value("${app.cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174}")
+    private String allowedOrigins;
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        log.info("配置安全过滤链...");
+        http
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+                .csrf(csrf -> csrf.disable())
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/admin/auth/login", "/error", "/h2-console/**").permitAll()
+                        .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**", "/swagger-resources/**").permitAll()
+                        .requestMatchers("/actuator/health/**", "/actuator/prometheus", "/actuator/metrics/**").permitAll()
+                        .requestMatchers("/api/auth/profile", "/api/auth/change-password", "/api/auth/dashboard").authenticated()
+                        .requestMatchers("/api/auth/**").permitAll()
+                        .requestMatchers("/api/public/**").permitAll()
+                        .requestMatchers("/ws/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/homestays/**").permitAll()
+                        .requestMatchers(HttpMethod.POST, "/api/homestays/search", "/api/homestays/map-search",
+                                "/api/homestays/map-clusters", "/api/homestays/nearby",
+                                "/api/homestays/landmark-search",
+                                "/api/v1/homestays/search", "/api/v1/homestays/map-search",
+                                "/api/v1/homestays/map-clusters", "/api/v1/homestays/nearby",
+                                "/api/v1/homestays/landmark-search").permitAll()
+                        // 地图找房的地点联想：未登录访客也要能用（地址解析 /api/map/geocode 仍需登录）
+                        .requestMatchers(HttpMethod.GET, "/api/map/poi-suggestions").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/files/**").permitAll()
+                        .requestMatchers("/api/files/upload", "/api/files/uploadMultiple").authenticated()
+                        .requestMatchers(HttpMethod.DELETE, "/api/files/**").authenticated()
+                        .requestMatchers("/uploads/**").permitAll()
+                        .requestMatchers("/static/**").permitAll()
+                        .requestMatchers("/api/review/public/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/reviews/homestay/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/reviews/homestay/*/stats").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/home/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/announcements/**").permitAll()
+                        .requestMatchers("/api/locations/**", "/api/v1/locations/**").permitAll()
+                        .requestMatchers("/api/homestay-types/**", "/api/v1/homestay-types/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/amenities/**", "/api/v1/amenities/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/recommendations/personalized/**").authenticated()
+                        .requestMatchers(HttpMethod.GET, "/api/recommendations/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/host/info/**").permitAll()
+                        .requestMatchers("/api/system/**").permitAll()
+                        .requestMatchers("/api/tracking/**").permitAll()
+                        .requestMatchers("/api/payment/*/notify").permitAll()
+                        .requestMatchers("/api/payment/**").authenticated()
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                        .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
+                        .requestMatchers("/api/host/register").authenticated()
+                        .requestMatchers("/api/host/profile").authenticated()
+                        .requestMatchers("/api/host/**").hasAnyAuthority("ROLE_HOST", "ROLE_ADMIN")
+                        .requestMatchers("/api/host/earnings/**").hasAnyAuthority("ROLE_HOST", "ROLE_ADMIN")
+                        .anyRequest().authenticated())
+                .exceptionHandling(errors -> errors
+                        .authenticationEntryPoint((request, response, exception) -> response.sendError(401))
+                        .accessDeniedHandler((request, response, exception) -> response.sendError(403)))
+                .sessionManagement(session -> session
+                        .sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authenticationProvider(authenticationProvider())
+                .addFilterBefore(cookieOriginFilter(), UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .headers(headers -> headers.frameOptions(frameOptions -> frameOptions.disable()));
+
+        log.info("安全过滤链配置完成");
+        return http.build();
+    }
+
+    private org.springframework.web.filter.OncePerRequestFilter cookieOriginFilter() {
+        CorsConfiguration cors = corsConfiguration();
+        return new org.springframework.web.filter.OncePerRequestFilter() {
+            @Override
+            protected void doFilterInternal(jakarta.servlet.http.HttpServletRequest request,
+                                            jakarta.servlet.http.HttpServletResponse response,
+                                            jakarta.servlet.FilterChain chain)
+                    throws java.io.IOException, jakarta.servlet.ServletException {
+                boolean safeMethod = java.util.Set.of("GET", "HEAD", "OPTIONS").contains(request.getMethod());
+                boolean cookieRequest = com.homestay3.homestaybackend.security.AuthTokenResolver.cookie(request) != null;
+                if (!safeMethod && cookieRequest && !com.homestay3.homestaybackend.security.AuthTokenResolver.path(request).startsWith("/api/admin/")) {
+                    String origin = request.getHeader("Origin");
+                    if (origin == null) {
+                        String referer = request.getHeader("Referer");
+                        if (referer != null) {
+                            try {
+                                java.net.URI uri = java.net.URI.create(referer);
+                                origin = uri.getScheme() + "://" + uri.getRawAuthority();
+                            } catch (IllegalArgumentException ignored) {}
+                        }
+                    }
+                    String requestOrigin = request.getScheme() + "://" + request.getServerName();
+                    int port = request.getServerPort();
+                    if (!("http".equals(request.getScheme()) && port == 80)
+                            && !("https".equals(request.getScheme()) && port == 443)) {
+                        requestOrigin += ":" + port;
+                    }
+                    if (origin == null || (!requestOrigin.equals(origin) && cors.checkOrigin(origin) == null)) {
+                        response.sendError(403, "Cookie请求来源校验失败");
+                        return;
+                    }
+                }
+                chain.doFilter(request, response);
+            }
+        };
+    }
+
+    @Bean
+    public AuthenticationProvider authenticationProvider() {
+        DaoAuthenticationProvider authProvider = new DaoAuthenticationProvider();
+        authProvider.setUserDetailsService(userDetailsService);
+        authProvider.setPasswordEncoder(passwordEncoder());
+        log.info("已配置认证提供者");
+        return authProvider;
+    }
+
+    @Bean
+    public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
+        log.info("创建认证管理器");
+        return config.getAuthenticationManager();
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        log.info("创建密码编码器");
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public CorsConfigurationSource corsConfigurationSource() {
+        log.info("配置CORS...");
+        CorsConfiguration configuration = corsConfiguration();
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/**", configuration);
+        return source;
+    }
+
+    private CorsConfiguration corsConfiguration() {
+        CorsConfiguration configuration = new CorsConfiguration();
+
+        // 允许的来源由配置注入，部署时无需改代码（支持 * 与子域通配）
+        List<String> origins = Arrays.stream(allowedOrigins.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .toList();
+        configuration.setAllowedOriginPatterns(origins);
+
+        // 设置允许的方法
+        configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"));
+
+        // 允许必要的头信息，包括自定义头
+        configuration.setAllowedHeaders(Arrays.asList(
+                "Authorization", "Cache-Control", "Content-Type", "Accept",
+                "Access-Control-Allow-Headers", "Access-Control-Allow-Origin",
+                "X-Requested-With", "Origin",
+                "x-user-id",
+                "x-username"));
+
+        // 暴露响应头
+        configuration.setExposedHeaders(Arrays.asList(
+                "Content-Type", "Content-Length", "Authorization",
+                "Access-Control-Allow-Origin", "Access-Control-Allow-Methods",
+                "Access-Control-Allow-Headers", "Access-Control-Allow-Credentials",
+                "Content-Disposition",
+                "X-Username",
+                "X-User-Id"));
+
+        // 允许发送凭证
+        configuration.setAllowCredentials(true);
+
+        // 预检请求的有效期，单位为秒
+        configuration.setMaxAge(3600L);
+
+        return configuration;
+    }
+}

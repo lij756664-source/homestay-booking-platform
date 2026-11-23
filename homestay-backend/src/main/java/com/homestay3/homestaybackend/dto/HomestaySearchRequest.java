@@ -1,0 +1,48 @@
+package com.homestay3.homestaybackend.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class HomestaySearchRequest {
+    private String keyword;
+    private String location;
+    private String provinceCode;
+    private String cityCode;
+    private String districtCode;
+    private String propertyType;
+    private Integer minGuests;
+    private Integer maxGuests;
+    private BigDecimal minPrice;
+    private BigDecimal maxPrice;
+    private BigDecimal northEastLat;
+    private BigDecimal northEastLng;
+    private BigDecimal southWestLat;
+    private BigDecimal southWestLng;
+    private Integer zoom;
+    private BigDecimal latitude;
+    private BigDecimal longitude;
+    private BigDecimal radiusKm;
+    private Integer limit;
+    private LocalDate checkInDate;
+    private LocalDate checkOutDate;
+    private List<String> requiredAmenities;
+    private Integer page;
+    private Integer size;
+    private String sortBy;
+    private String sortDirection;
+    /** 多字段排序字符串，格式：field,desc;field2,asc。优先于 sortBy + sortDirection */
+    private String sort;
+
+    /** 当前用户ID（可选，用于搜索个性化） */
+    private Long userId;
+} 

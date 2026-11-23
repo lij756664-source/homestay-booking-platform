@@ -1,0 +1,37 @@
+/* ===== 全局样式（非模板残留，管理后台实际生效） ===== */
+
+:root {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  /* 仅亮色主题（管理后台无暗色模式） */
+  color-scheme: light;
+  color: #303133;
+  background-color: #f5f7fa;
+
+  /* Element Plus 主色覆盖：品牌靛蓝（统一登录页/仪表盘/组件三套色）
+     !important：EP 按需组件样式运行时后注入，会覆盖 :root 同名变量 */
+  --el-color-primary: #6366f1 !important;
+  --el-color-primary-light-3: #9294f5 !important;
+  --el-color-primary-light-5: #b1b3f8 !important;
+  --el-color-primary-light-7: #d0d1fb !important;
+  --el-color-primary-light-8: #e0e0fc !important;
+  --el-color-primary-light-9: #eff0fe !important;
+  --el-color-primary-dark-2: #4f52c1 !important;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100vh;
+  min-width: 320px;
+}
+
+#app {
+  width: 100vw;
+  height: 100vh;
+}
