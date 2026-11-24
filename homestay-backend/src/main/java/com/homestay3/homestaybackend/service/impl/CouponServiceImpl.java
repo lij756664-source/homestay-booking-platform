@@ -122,10 +122,10 @@ public class CouponServiceImpl implements CouponService {
     }
 
     @Override
-    @Transactional
+    @Transactional(readOnly = true)
     public List<UserCoupon> getAvailableCoupons(Long userId) {
         LocalDateTime now = LocalDateTime.now();
-        userCouponRepository.expireOutdatedCoupons(now);
+        // Quotes run read-only; the query excludes expired coupons, so do not mutate status here.
         return userCouponRepository.findByUserIdAndStatusAndExpireAtAfterOrderByExpireAtAsc(
                 userId, "AVAILABLE", now);
     }
